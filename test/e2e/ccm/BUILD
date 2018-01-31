@@ -9,9 +9,13 @@ go_library(
     importpath = "k8s.io/kubernetes/test/e2e/ccm",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/kubelet/apis:go_default_library",
+        "//test/e2e/ccm/cloud:go_default_library",
         "//test/e2e/framework:go_default_library",
         "//vendor/github.com/onsi/ginkgo:go_default_library",
         "//vendor/github.com/onsi/gomega:go_default_library",
+        "//vendor/k8s.io/api/core/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
     ],
 )
 
@@ -24,7 +28,10 @@ filegroup(
 
 filegroup(
     name = "all-srcs",
-    srcs = [":package-srcs"],
+    srcs = [
+        ":package-srcs",
+        "//test/e2e/ccm/cloudclient:all-srcs",
+    ],
     tags = ["automanaged"],
     visibility = ["//visibility:public"],
 )
