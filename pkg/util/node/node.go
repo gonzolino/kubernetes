@@ -88,15 +88,20 @@ func GetPreferredNodeAddress(node *v1.Node, preferredAddressTypes []v1.NodeAddre
 	return "", &NoMatchError{addresses: node.Status.Addresses}
 }
 
+func getNodeAddressMap(addresses []v1.NodeAddress) map[v1.NodeAddressType][]v1.NodeAddress {
+	addressMap := make(map[v1.NodeAddressType][]v1.NodeAddress)
+	for i := range addresses {
+		addressMap[addresses[i].Type] = append(addressMap[addresses[i].Type], addresses[i])
+	}
+	return addressMap
+}
+
 // GetNodeHostIP returns the provided node's IP, based on the priority:
 // 1. NodeInternalIP
 // 2. NodeExternalIP
 func GetNodeHostIP(node *v1.Node) (net.IP, error) {
 	addresses := node.Status.Addresses
-	addressMap := make(map[v1.NodeAddressType][]v1.NodeAddress)
-	for i := range addresses {
-		addressMap[addresses[i].Type] = append(addressMap[addresses[i].Type], addresses[i])
-	}
+	addressMap := getNodeAddressMap(addresses)
 	if addresses, ok := addressMap[v1.NodeInternalIP]; ok {
 		return net.ParseIP(addresses[0].Address), nil
 	}
@@ -106,11 +111,45 @@ func GetNodeHostIP(node *v1.Node) (net.IP, error) {
 	return nil, fmt.Errorf("host IP unknown; known addresses: %v", addresses)
 }
 
+// isHostnameAssigned checks if the given hostname is assigned as address to the node
+func isHostnameAssigned(hostname string, node v1.Node) bool {
+	if node.Labels["kubernetes.io/hostname"] == hostname {
+		return true
+	}
+	addressMap := getNodeAddressMap(node.Status.Addresses)
+	if hostnames, ok := addressMap[v1.NodeHostName]; ok {
+		for _, name := range hostnames {
+			if name.Address == hostname {
+				return true
+			}
+		}
+	}
+	if dnsNames, ok := addressMap[v1.NodeInternalDNS]; ok {
+		for _, name := range dnsNames {
+			if name.Address == hostname {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // GetNodeIP returns the ip of node with the provided hostname
 func GetNodeIP(client clientset.Interface, hostname string) net.IP {
 	var nodeIP net.IP
-	node, err := client.CoreV1().Nodes().Get(hostname, metav1.GetOptions{})
+	var node *v1.Node
+	nodes, err := client.CoreV1().Nodes().List(metav1.ListOptions{})
 	if err != nil {
+		klog.Warningf("Failed to list nodes: %v", err)
+		return nil
+	}
+	for i := range nodes.Items {
+		if nodes.Items[i].Name == hostname || isHostnameAssigned(hostname, nodes.Items[i]) {
+			node = &nodes.Items[i]
+			break
+		}
+	}
+	if node == nil {
 		klog.Warningf("Failed to retrieve node info: %v", err)
 		return nil
 	}
